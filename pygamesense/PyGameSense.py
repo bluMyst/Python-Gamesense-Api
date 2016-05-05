@@ -13,6 +13,15 @@
 import requests
 import time
 
+COREPROPS = "C:/ProgramData/SteelSeries/SteelSeries Engine 3/coreProps.json"
+
+# HELPER FUNCTIONS
+def parse_core_props(path=COREPROPS):
+    """Returns IP, then port."""
+    f = open(path, 'r')
+    io = StringIO(unicode(f.read()))
+    addr = json.load(io)["address"].split(":")
+    return (addr[0], addr[1])
 
 # STATIC COLORS
 class Colors:
@@ -28,11 +37,32 @@ class Colors:
 
 # GAMESENSEBRIDGE MAIN CLASS
 class GameSenseBridge:
+    """Can be initialized with (core_props_path) or (gs_ip, gs_port)
+
+    Example usage:
+
+    from pygamesense import *
+
+    gs = GameSenseBridge(gs_ip, gs_port)
+    gs = GameSenseBridge(core_props_path)
+    gs = GameSenseBridge()
+
+    Calling this method with no arguments will default to:
+    gs = GameSenseBridge(COREPROPS)
+
+    If core_props_path is invalid, IOError will be raised.
+    """
+
     # -----INIT-----
-    def __init__(self,  gs_ip, gs_port):
+    def __init__(self,  *args, **kwargs):
+        if len(args) == 2:
+            self.gs_ip, self.gs_port = args
+        elif len(args) > 2:
+            raise ValueError("0-2 arguments expected. Got: " + str(len(args)))
+        else:
+            self.gs_ip, self.gs_port = parse_core_props(*args)
+
         # ESTABLISH OUR CONNECTION TO STEELSERIES SERVER
-        self.gs_port = gs_port
-        self.gs_ip = gs_ip
         self.gsurl = "http://%s:%s/" % (gs_ip, gs_port)
         # OUR REQUEST SESSION
         self.session = requests.session()
@@ -72,7 +102,9 @@ class GameSenseBridge:
 
     # REGISTER A NEW GAME
     def register_game(self, game_name, game_display_name, icon_color_id):
-        payload = {"game": game_name, "game_display_name": game_display_name, "icon_color_id": icon_color_id}
+        payload = {"game": game_name, "game_display_name": game_display_name,
+            "icon_color_id": icon_color_id}
+
         return self._post("game_metadata", payload)
 
     # REMOVES THE GAME WITH NAME
@@ -82,7 +114,9 @@ class GameSenseBridge:
 
     # REGISTER A NEW EVENT
     def register_event(self, game_name, event, min_value, max_value, icon_id):
-        payload = {"game": game_name, "event": event, "min_value": min_value, "max_value": max_value, "icon_id": icon_id}
+        payload = {"game": game_name, "event": event, "min_value": min_value,
+            "max_value": max_value, "icon_id": icon_id}
+
         return self._post("register_game_event", payload)
 
     # REMOVES AN EVENT
@@ -90,9 +124,11 @@ class GameSenseBridge:
         payload = {"game": game_name, "event": event}
         return self._post("remove_game_event", payload)
 
-    # BINDS AN EVENT TO AN HANDLER
+    # BINDS AN EVENT TO A HANDLER
     def bind_event(self, game_name, event, min_value, max_value, icon_id, handler):
-        payload = {"game": game_name, "event": event, "min_value": min_value, "max_value": max_value, "icon_id": icon_id}
+        payload = {"game": game_name, "event": event, "min_value": min_value,
+            "max_value": max_value, "icon_id": icon_id}
+
         payload["handlers"] = handler
         return self._post("bind_game_event", payload)
 
@@ -125,25 +161,36 @@ class GameSenseEffects:
     def show_static_color(self, game_name, device_type, zones, color):
         (r, g, b) = color
         for zone in zones:
-            handler = self.gs.build_handler(device_type, zone, "color", {"red": r, "green": g, "blue": b})
+            handler = self.gs.build_handler(
+                device_type, zone,
+                "color", {"red": r, "green": g, "blue": b})
+
             self.gs.bind_event(game_name, "COLOR", 0, 100, 16, handler)
             self.gs.send_gameevent(game_name, "COLOR", 100)
 
     # SINGLE COLOR RAINBOW
     def show_rgb_rainbow(self, game_name, device_type, zones):
+        # Editor's note: Why is there no time.sleep here? Won't this be a huge
+        # CPU hog? It looks like it infinitely loops as fast as the processor
+        # can handle it.
         while True:
-            for i in range(0, 50):
-                f = i * 5
-                self.show_static_color(game_name, device_type, zones, (255-f, f, 0))
-            for i in range(0, 50):
-                f = i * 5
-                self.show_static_color(game_name, device_type, zones, (0, 255-f, f))  # GREEN -> BLUE
-            for i in range(0, 50):
-                f = i * 5
-                self.show_static_color(game_name, device_type, zones, (f, 0, 255-f))  # BLUE -> RED
+            for i in range(0, 250, 5):
+                self.show_static_color(
+                    game_name, device_type, zones,
+                    (255-i, i, 0))
+
+            for i in range(0, 250, 5):
+                self.show_static_color(
+                    game_name, device_type, zones,
+                    (0, 255-i, i)) # GREEN -> BLUE
+
+            for i in range(0, 250, 5):
+                self.show_static_color(
+                    game_name, device_type, zones,
+                    (i, 0, 255-i)) # BLUE -> RED
 
 
-# ----ALL KIND OF DEVICES----
+# ----DEVICE INFO----
 class MouseRival:
     DEVICE_TYPE = "rgb-2-zone"
     ZONES = ["one", "two"]
